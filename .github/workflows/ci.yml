@@ -87,39 +87,39 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-          installer-parallel: true
+      - name: Install ruff
+        uses: astral-sh/ruff-action@v3
 
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          path: pytrustfall/.venv
-          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+          working-directory: pytrustfall
 
       - name: Install dependencies
-        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: |
           cd pytrustfall
-          poetry install --no-interaction --no-root
+          uv sync --no-install-project
 
-      - name: maturin build and test
+      - name: pytest
         run: |
           cd pytrustfall
-          source .venv/bin/activate
-          maturin develop
-          pytest
-          maturin build --interpreter python -o target/wheels/
+          uv run pytest
 
       - name: mypy
         run: |
           cd pytrustfall
-          source .venv/bin/activate
-          mypy
+          uv run mypy
+
+      - name: ruff check
+        run: ruff check pytrustfall
+
+      - name: ruff format
+        run: ruff format pytrustfall --check --diff
+
+      - name: Build python distribution
+        run:
+          cd pytrustfall
+          uv build
 
       - name: Set environment variables
         id: branch-info
@@ -137,14 +137,14 @@ jobs:
         if: steps.branch-info.outputs.PYTHON_BINDINGS_CHANGED != 0
         with:
           name: pytrustfall-wheels
-          path: pytrustfall/target/wheels/
+          path: pytrustfall/dist
           retention-days: 1
 
       - name: Make a new prerelease
         uses: ncipollo/release-action@v1
         if: steps.branch-info.outputs.BRANCH_NAME == 'main' && steps.branch-info.outputs.PYTHON_BINDINGS_CHANGED != 0
         with:
-          artifacts: "pytrustfall/target/wheels/*.whl,pytrustfall/target/wheels/*.tar.gz"
+          artifacts: "pytrustfall/dist/*.whl,pytrustfall/dist/*.tar.gz"
           commit: ${{ steps.branch-info.outputs.COMMIT }}
           tag: ${{ steps.branch-info.outputs.TAG_NAME }}
           generateReleaseNotes: true
